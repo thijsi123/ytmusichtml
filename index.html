@@ -3,24 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Music Messenger</title>
+  <title>Music Messenger with Chat</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       margin: 0;
       padding: 20px;
     }
-
     .widget {
       background-color: #fff;
       border: 1px solid #ddd;
       padding: 20px;
       max-width: 400px;
       margin: auto;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
-
-    /* Hide the YouTube player element off-screen */
+    /* Hidden YouTube player (off-screen) */
     #player {
       width: 0;
       height: 0;
@@ -28,34 +26,51 @@
       position: absolute;
       left: -9999px;
     }
-
     #controls {
       margin-top: 20px;
       display: none;
     }
-
     #seek-bar {
       width: 300px;
       vertical-align: middle;
     }
-
     #play-pause-btn {
       vertical-align: middle;
       padding: 5px 10px;
       font-size: 16px;
     }
-
     #time-display {
       margin-left: 10px;
       font-size: 14px;
+    }
+    /* Chat area styling */
+    #chat-container {
+      margin-top: 30px;
+      border: 1px solid #ccc;
+      padding: 10px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .chat-message {
+      margin-bottom: 10px;
+    }
+    #chat-input {
+      width: 60%;
+      padding: 8px;
+      font-size: 14px;
+    }
+    #chat-send-btn, #ai-play-btn {
+      padding: 8px 12px;
+      font-size: 14px;
+      margin-left: 5px;
     }
   </style>
 </head>
 <body>
   <div class="widget">
     <h3>Play a Song</h3>
-    <input id="song-title" type="text" placeholder="Song Name" />
-    <input id="artist-name" type="text" placeholder="Artist Name" />
+    <input id="song-title" type="text" placeholder="Song Name">
+    <input id="artist-name" type="text" placeholder="Artist Name">
     <button onclick="playSong()">Play</button>
 
     <!-- Hidden YouTube Player Container -->
@@ -64,30 +79,40 @@
     <!-- Custom Controls -->
     <div id="controls">
       <button id="play-pause-btn" onclick="togglePlayPause()">Pause</button>
-      <input type="range" id="seek-bar" value="0" min="0" max="100" step="1" />
+      <input type="range" id="seek-bar" value="0" min="0" step="1">
       <span id="time-display">0:00 / 0:00</span>
+    </div>
+
+    <!-- Chat Messenger Area -->
+    <div id="chat-container"></div>
+    <div>
+      <input id="chat-input" type="text" placeholder="Type your message here...">
+      <button id="chat-send-btn" onclick="sendChatMessage()">Send</button>
+      <button id="ai-play-btn" onclick="playAi()">Play AI</button>
     </div>
   </div>
 
-  <!-- Load the YouTube IFrame API -->
+  <!-- Load YouTube IFrame API -->
   <script src="https://www.youtube.com/iframe_api"></script>
   <script>
     var player;
     var updateTimer;
     var isPlaying = false;
+    // Global variable to store chat history (as a string)
+    var chatHistory = "";
 
-    // This function is called by the YouTube API when it is ready.
     function onYouTubeIframeAPIReady() {
       player = new YT.Player('player', {
         height: '0',
         width: '0',
-        videoId: '', // Initially empty
+        videoId: '',
         playerVars: {
           'autoplay': 1,
           'controls': 0,
           'disablekb': 1,
           'modestbranding': 1,
-          'rel': 0
+          'rel': 0,
+          'origin': 'http://localhost:63342'
         },
         events: {
           'onReady': onPlayerReady,
@@ -101,7 +126,6 @@
     }
 
     function onPlayerStateChange(event) {
-      // When playing, update controls and start timer
       if (event.data === YT.PlayerState.PLAYING) {
         isPlaying = true;
         document.getElementById("play-pause-btn").innerText = "Pause";
@@ -150,7 +174,6 @@
       }
     }
 
-    // Update player when the seek bar is moved by the user.
     document.getElementById("seek-bar").addEventListener("input", function () {
       if (player && player.seekTo) {
         player.seekTo(parseFloat(this.value), true);
@@ -160,24 +183,20 @@
     async function playSong() {
       const songTitle = document.getElementById("song-title").value;
       const artistName = document.getElementById("artist-name").value;
-
       if (songTitle && artistName) {
         try {
           const response = await fetch("http://127.0.0.1:5000/search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ song_title: songTitle, artist_name: artistName }),
+            body: JSON.stringify({ song_title: songTitle, artist_name: artistName })
           });
-
           const data = await response.json();
           console.log("Response Data:", data);
           if (data.url) {
-            // Extract the video ID from the URL (assuming format ...?v=VIDEO_ID)
             const url = new URL(data.url);
             const videoId = url.searchParams.get("v");
             if (player && videoId) {
               player.loadVideoById(videoId);
-              // Show custom controls once a video is loaded.
               document.getElementById("controls").style.display = "block";
             } else {
               alert("Video ID not found");
@@ -192,6 +211,73 @@
       } else {
         alert("Please enter both a song title and an artist name!");
       }
+    }
+
+    async function sendChatMessage() {
+      const chatInput = document.getElementById("chat-input");
+      const message = chatInput.value.trim();
+      if (!message) return;
+      addChatMessage("You", message);
+      chatHistory += "You: " + message + "\n";
+      chatInput.value = "";
+      // (Optional) send to /chat endpoint to display an assistant reply
+      try {
+        const response = await fetch("http://127.0.0.1:5000/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: message })
+        });
+        const result = await response.json();
+        console.log("Chat Response:", result);
+        if (result.reply) {
+          addChatMessage("Assistant", result.reply);
+          chatHistory += "Assistant: " + result.reply + "\n";
+        } else {
+          addChatMessage("Assistant", "Sorry, something went wrong.");
+        }
+      } catch (error) {
+        console.error("Chat Error:", error);
+        addChatMessage("Assistant", "Failed to connect to chat service.");
+      }
+    }
+
+    // Function for the new "Play AI" button.
+    async function playAi() {
+      try {
+        // Send previous chat history to the /play_ai endpoint.
+        const response = await fetch("http://127.0.0.1:5000/play_ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_history: chatHistory })
+        });
+        const result = await response.json();
+        console.log("Play AI Response:", result);
+        if (result.song_artist) {
+          // Expecting a string in the format "SongName|ArtistName"
+          const parts = result.song_artist.split("|");
+          if (parts.length === 2) {
+            document.getElementById("song-title").value = parts[0];
+            document.getElementById("artist-name").value = parts[1];
+            playSong();
+          } else {
+            alert("Could not parse song information from AI response.");
+          }
+        } else {
+          alert("AI did not return any song information.");
+        }
+      } catch (error) {
+        console.error("Play AI Error:", error);
+        alert("Failed to connect to the AI service.");
+      }
+    }
+
+    function addChatMessage(sender, message) {
+      const container = document.getElementById("chat-container");
+      const messageElem = document.createElement("div");
+      messageElem.className = "chat-message";
+      messageElem.innerText = `${sender}: ${message}`;
+      container.appendChild(messageElem);
+      container.scrollTop = container.scrollHeight;
     }
   </script>
 </body>
