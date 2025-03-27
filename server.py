@@ -69,16 +69,13 @@ def chat():
             "max_length": 80,
             "prompt": prompt,
             "quiet": False,
-            "rep_pen": 1.1,
+            "rep_pen": 1.02,
             "rep_pen_range": 256,
             "rep_pen_slope": 1,
             "temperature": 0.5,
-            "tfs": 1,
-            "top_a": 0,
-            "top_k": 100,
             "top_p": 0.9,
             "typical": 1,
-            "stop": ["<|user|>"]
+            "stop_sequence": ["<|user|>", "Human:"]
         }
         kobold_response = requests.post(kobold_url, json=payload)
         result = kobold_response.json()
@@ -123,15 +120,13 @@ def play_ai():
             "max_length": 80,
             "prompt": prompt,
             "quiet": False,
-            "rep_pen": 1.1,
+            "rep_pen": 1.02,
             "rep_pen_range": 256,
             "rep_pen_slope": 1,
             "temperature": 0.5,
-            "tfs": 1,
-            "top_a": 0,
-            "top_k": 100,
             "top_p": 0.9,
-            "typical": 1
+            "typical": 1,
+            "stop_sequence": ["<|user|>", "Human:"]
         }
         kobold_response = requests.post(kobold_url, json=payload)
         result = kobold_response.json()
