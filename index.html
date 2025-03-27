@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Music Messenger</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .widget {
+      background-color: #fff;
+      border: 1px solid #ddd;
+      padding: 20px;
+      max-width: 400px;
+      margin: auto;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Hide the YouTube player element off-screen */
+    #player {
+      width: 0;
+      height: 0;
+      overflow: hidden;
+      position: absolute;
+      left: -9999px;
+    }
+
+    #controls {
+      margin-top: 20px;
+      display: none;
+    }
+
+    #seek-bar {
+      width: 300px;
+      vertical-align: middle;
+    }
+
+    #play-pause-btn {
+      vertical-align: middle;
+      padding: 5px 10px;
+      font-size: 16px;
+    }
+
+    #time-display {
+      margin-left: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="widget">
+    <h3>Play a Song</h3>
+    <input id="song-title" type="text" placeholder="Song Name" />
+    <input id="artist-name" type="text" placeholder="Artist Name" />
+    <button onclick="playSong()">Play</button>
+
+    <!-- Hidden YouTube Player Container -->
+    <div id="player"></div>
+
+    <!-- Custom Controls -->
+    <div id="controls">
+      <button id="play-pause-btn" onclick="togglePlayPause()">Pause</button>
+      <input type="range" id="seek-bar" value="0" min="0" max="100" step="1" />
+      <span id="time-display">0:00 / 0:00</span>
+    </div>
+  </div>
+
+  <!-- Load the YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script>
+    var player;
+    var updateTimer;
+    var isPlaying = false;
+
+    // This function is called by the YouTube API when it is ready.
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('player', {
+        height: '0',
+        width: '0',
+        videoId: '', // Initially empty
+        playerVars: {
+          'autoplay': 1,
+          'controls': 0,
+          'disablekb': 1,
+          'modestbranding': 1,
+          'rel': 0
+        },
+        events: {
+          'onReady': onPlayerReady,
+          'onStateChange': onPlayerStateChange
+        }
+      });
+    }
+
+    function onPlayerReady(event) {
+      console.log('Player is ready.');
+    }
+
+    function onPlayerStateChange(event) {
+      // When playing, update controls and start timer
+      if (event.data === YT.PlayerState.PLAYING) {
+        isPlaying = true;
+        document.getElementById("play-pause-btn").innerText = "Pause";
+        startUpdating();
+      } else {
+        isPlaying = false;
+        document.getElementById("play-pause-btn").innerText = "Play";
+        stopUpdating();
+      }
+    }
+
+    function startUpdating() {
+      updateTimer = setInterval(updateSeekBar, 500);
+    }
+
+    function stopUpdating() {
+      clearInterval(updateTimer);
+    }
+
+    function updateSeekBar() {
+      if (player && player.getDuration) {
+        var duration = player.getDuration();
+        var currentTime = player.getCurrentTime();
+        var seekBar = document.getElementById("seek-bar");
+        seekBar.max = duration;
+        seekBar.value = currentTime;
+        document.getElementById("time-display").innerText =
+          formatTime(currentTime) + " / " + formatTime(duration);
+      }
+    }
+
+    function formatTime(time) {
+      time = Math.floor(time);
+      var minutes = Math.floor(time / 60);
+      var seconds = time % 60;
+      if (seconds < 10) seconds = "0" + seconds;
+      return minutes + ":" + seconds;
+    }
+
+    function togglePlayPause() {
+      if (!player) return;
+      if (isPlaying) {
+        player.pauseVideo();
+      } else {
+        player.playVideo();
+      }
+    }
+
+    // Update player when the seek bar is moved by the user.
+    document.getElementById("seek-bar").addEventListener("input", function () {
+      if (player && player.seekTo) {
+        player.seekTo(parseFloat(this.value), true);
+      }
+    });
+
+    async function playSong() {
+      const songTitle = document.getElementById("song-title").value;
+      const artistName = document.getElementById("artist-name").value;
+
+      if (songTitle && artistName) {
+        try {
+          const response = await fetch("http://127.0.0.1:5000/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ song_title: songTitle, artist_name: artistName }),
+          });
+
+          const data = await response.json();
+          console.log("Response Data:", data);
+          if (data.url) {
+            // Extract the video ID from the URL (assuming format ...?v=VIDEO_ID)
+            const url = new URL(data.url);
+            const videoId = url.searchParams.get("v");
+            if (player && videoId) {
+              player.loadVideoById(videoId);
+              // Show custom controls once a video is loaded.
+              document.getElementById("controls").style.display = "block";
+            } else {
+              alert("Video ID not found");
+            }
+          } else {
+            alert(data.error || "An error occurred");
+          }
+        } catch (error) {
+          console.error("Fetch Error:", error);
+          alert("Failed to connect to the server");
+        }
+      } else {
+        alert("Please enter both a song title and an artist name!");
+      }
+    }
+  </script>
+</body>
+</html>
