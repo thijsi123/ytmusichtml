@@ -483,7 +483,10 @@
 
       // Add user message to chat
       addChatMessage("You", message, true);
-      chatHistory += "You: " + message + "\n";
+
+      // Keep a more structured chat history with timestamps
+      const timestamp = new Date().toLocaleTimeString();
+      chatHistory += `[${timestamp}] You: ${message}\n`;
 
       // Clear input
       chatInput.value = "";
@@ -492,11 +495,14 @@
         // Show typing indicator
         showTypingIndicator();
 
-        // Send to chat endpoint
+        // Send to chat endpoint with the full chat history
         const response = await fetch("http://127.0.0.1:5000/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: message })
+          body: JSON.stringify({
+            message: message,
+            chat_history: chatHistory
+          })
         });
 
         // Hide typing indicator
@@ -512,7 +518,10 @@
         if (result.reply) {
           // Add assistant message to chat
           addChatMessage("Assistant", result.reply, false);
-          chatHistory += "Assistant: " + result.reply + "\n";
+
+          // Add to chat history with timestamp
+          const timestamp = new Date().toLocaleTimeString();
+          chatHistory += `[${timestamp}] Assistant: ${result.reply}\n`;
 
           // Check if there's a play command
           if (result.play_command) {
@@ -530,10 +539,63 @@
 
     // Handle playing song directly from AI's suggestion
     function playSongFromCommand(songTitle, artistName) {
-      if (!songTitle || !artistName) return;
+      if (!songTitle) return;
 
-      addSystemMessage(`Playing "${songTitle}" by ${artistName}...`);
-      playSong(songTitle, artistName);
+      if (artistName === "Unknown") {
+        addSystemMessage(`Searching for "${songTitle}"...`);
+        searchAndPlay(songTitle);
+      } else {
+        addSystemMessage(`Playing "${songTitle}" by ${artistName}...`);
+        playSong(songTitle, artistName);
+      }
+    }
+
+    // Search for a term and play the first result
+    async function searchAndPlay(searchTerm) {
+      if (!searchTerm) return;
+
+      try {
+        const response = await fetch("http://127.0.0.1:5000/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ search_term: searchTerm })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server responded with status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("Search Response:", data);
+
+        if (data.url) {
+          const url = new URL(data.url);
+          const videoId = url.searchParams.get("v");
+
+          if (player && videoId) {
+            // Update current song info
+            currentSong = data.title || searchTerm;
+            currentArtist = data.artist || "Unknown Artist";
+
+            // Update display
+            document.getElementById("song-title").textContent = currentSong;
+            document.getElementById("artist-name").textContent = currentArtist;
+
+            // Enable controls and play video
+            updatePlayerControls(true);
+            player.loadVideoById(videoId);
+
+            addSystemMessage(`Found and playing "${currentSong}" by ${currentArtist}`);
+          } else {
+            addSystemMessage("Video ID not found");
+          }
+        } else {
+          addSystemMessage(data.error || "An error occurred while searching");
+        }
+      } catch (error) {
+        console.error("Search Error:", error);
+        addSystemMessage("Failed to connect to the music service");
+      }
     }
 
     // Play AI function (separate from chat)
@@ -577,16 +639,27 @@
 
     // Main function to play songs
     async function playSong(songTitle, artistName) {
-      if (!songTitle || !artistName) {
-        console.error("Song title and artist name are required");
+      if (!songTitle && !artistName) {
+        console.error("Either song title or artist name is required");
         return;
       }
 
       try {
+        // Create payload based on what we have
+        let payload = {};
+
+        if (songTitle && artistName) {
+          payload = { song_title: songTitle, artist_name: artistName };
+        } else if (songTitle) {
+          payload = { song_title: songTitle };
+        } else if (artistName) {
+          payload = { artist_name: artistName, song_title: "popular song" };
+        }
+
         const response = await fetch("http://127.0.0.1:5000/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ song_title: songTitle, artist_name: artistName })
+          body: JSON.stringify(payload)
         });
 
         if (!response.ok) {

@@ -18,12 +18,26 @@ KOBOLD_API_URL = "http://127.0.0.1:5001/api/v1/generate"
 # System prompts
 CHAT_SYSTEM_PROMPT = """You are an AI assistant that helps with music queries and chat.
 You have access to a music player and can play songs by suggesting them.
-When a user asks to play a song, respond with the song and artist information,
-and also include a special command in this format: [PLAY]: <song name> by <artist>.
 
-If a user says something like "play that song" or refers to a previously mentioned song,
-look at the conversation history to determine which song they're referring to,
-then use the [PLAY] command with that song's information.
+IMPORTANT GUIDELINES:
+1. When a user asks to play a song, respond with the song and artist information, 
+   and also include a special command in this format: [PLAY]: <song name> by <artist>.
+
+2. If the user only mentions a song title without an artist, you can still try to play it.
+   In this case, use: [PLAY]: <song name> by Unknown
+
+3. If the user only mentions an artist, you can play their most popular song:
+   [PLAY]: popular song by <artist>
+
+4. If a user says something like "play that song" or refers to a previously mentioned song,
+   look at the conversation history to determine which song they're referring to,
+   then use the [PLAY] command with that song's information.
+
+5. If you're unsure about a song or artist, DO NOT make up information. Instead, say:
+   "I'm not familiar with that song/artist. Let me search for it: [SEARCH]: <what user mentioned>"
+
+6. For Dutch music specifically, be careful not to make assumptions. If the user asks for
+   Dutch music and you're uncertain, admit that and use the search command.
 
 Always maintain context across messages and remember previously mentioned songs.
 """
@@ -67,13 +81,30 @@ def search():
     """Search for a song on YouTube Music and return the playable URL."""
     try:
         data = request.get_json()
-        if not data or 'song_title' not in data or 'artist_name' not in data:
+
+        # Handle cases where we might only have a song title or search term
+        if not data:
             return jsonify({"error": "Invalid request"}), 400
 
-        song_title = data['song_title']
-        artist_name = data['artist_name']
-        search_query = f"{song_title} {artist_name}"
-        logger.debug(f"Searching for: {search_query}")
+        song_title = data.get('song_title', '')
+        artist_name = data.get('artist_name', '')
+
+        # If we don't have specific song/artist, check for a generic search query
+        search_term = data.get('search_term', '')
+
+        if not song_title and not search_term:
+            return jsonify({"error": "No search criteria provided"}), 400
+
+        # Determine what to search for
+        if search_term:
+            search_query = search_term
+            logger.debug(f"Searching for generic term: {search_query}")
+        elif artist_name:
+            search_query = f"{song_title} {artist_name}"
+            logger.debug(f"Searching for song by artist: {search_query}")
+        else:
+            search_query = song_title
+            logger.debug(f"Searching for song title only: {search_query}")
 
         # Search for songs using ytmusicapi
         search_results = ytmusic.search(search_query, filter="songs")
@@ -82,16 +113,19 @@ def search():
 
         # Find the best matching result
         matching_result = None
-        for result in search_results:
-            artists = result.get('artists') or []
-            for a in artists:
-                if artist_name.lower() in a.get('name', '').lower():
-                    matching_result = result
-                    break
-            if matching_result:
-                break
 
-        # If no match found, use the first result
+        # Only try to match artist if we have an artist name
+        if artist_name:
+            for result in search_results:
+                artists = result.get('artists') or []
+                for a in artists:
+                    if artist_name.lower() in a.get('name', '').lower():
+                        matching_result = result
+                        break
+                if matching_result:
+                    break
+
+        # If no match found or no artist specified, use the first result
         if not matching_result:
             matching_result = search_results[0]
 
@@ -99,11 +133,16 @@ def search():
         if not video_id:
             return jsonify({"error": "Video ID not found in search result"}), 404
 
+        # Get actual artist and title for display
+        actual_title = matching_result.get('title', song_title or search_term)
+        actual_artists = matching_result.get('artists', [])
+        actual_artist = actual_artists[0].get('name', artist_name) if actual_artists else "Unknown Artist"
+
         video_url = f"https://music.youtube.com/watch?v={video_id}"
         return jsonify({
             "url": video_url,
-            "title": matching_result.get('title', song_title),
-            "artist": matching_result.get('artists', [{'name': artist_name}])[0].get('name', artist_name)
+            "title": actual_title,
+            "artist": actual_artist
         })
 
     except Exception as e:
