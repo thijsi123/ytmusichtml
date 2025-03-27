@@ -20,6 +20,12 @@ CHAT_SYSTEM_PROMPT = """You are an AI assistant that helps with music queries an
 You have access to a music player and can play songs by suggesting them.
 When a user asks to play a song, respond with the song and artist information,
 and also include a special command in this format: [PLAY]: <song name> by <artist>.
+
+If a user says something like "play that song" or refers to a previously mentioned song,
+look at the conversation history to determine which song they're referring to,
+then use the [PLAY] command with that song's information.
+
+Always maintain context across messages and remember previously mentioned songs.
 """
 
 PLAY_AI_SYSTEM_PROMPT = """You are an AI assistant that helps with music queries.
@@ -111,13 +117,14 @@ def chat():
     try:
         data = request.get_json()
         message = data.get("message")
+        chat_history = data.get("chat_history", "")
         if not message:
             return jsonify({"error": "No message provided"}), 400
 
-        # Build prompt for regular chat
+        # Build prompt for regular chat with conversation history included
         prompt = (
             f"<|system|>{CHAT_SYSTEM_PROMPT}\n"
-            f"<|user|>{message}\n"
+            f"<|user|>Previous conversation:\n{chat_history}\n\nNew message: {message}\n"
             "<|assistant|>"
         )
 
@@ -125,6 +132,7 @@ def chat():
         logger.debug(f"AI response: {full_text}")
 
         # Check if there's a play command in the response
+        # Look for explicit [PLAY] commands or implicit references like "play that song"
         play_match = re.search(r"\[PLAY\]:\s*(.*?)\s+by\s+(.*?)(?:\.|$|\n)", full_text, re.IGNORECASE)
 
         if play_match:
