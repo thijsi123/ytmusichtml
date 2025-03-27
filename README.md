@@ -22,4 +22,6 @@ Install the required Python packages:
 ```bash
 pip install flask flask-cors ytmusicapi
 
+
+```
 ![image](https://github.com/user-attachments/assets/7982c349-06a8-42e0-add7-e58e55b49a43)
